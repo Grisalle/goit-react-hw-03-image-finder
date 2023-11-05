@@ -1,64 +1,104 @@
 import { Component } from 'react';
-import { nanoid } from 'nanoid';
-import { ContactForm } from './ContactForm/ContactForm';
-import { ContactList } from './ContactList/ContactList';
-import { Search } from './Search/Search';
-import css from './App.module.css';
+import { fetchImage } from './api/pixabay';
+import { Button } from './Button/Button';
+import { ImageGalery } from './ImageGallery/ImageGallery';
+import { Loader } from './Loader/Loader';
+import { Modal } from './Modal/Modal';
+import { SearchBar } from './SearchBar/SearchBar';
 
 export class App extends Component {
   state = {
-    contacts: [
-      { id: 'id-1', name: 'Rosie Simpson', number: '459-12-56' },
-      { id: 'id-2', name: 'Hermione Kline', number: '443-89-12' },
-      { id: 'id-3', name: 'Eden Clements', number: '645-17-79' },
-      { id: 'id-4', name: 'Annie Copeland', number: '227-91-26' },
-    ],
-
-    filter: '',
+    searchText: '',
+    currentPage: 1,
+    totalHits: 0,
+    items: [],
+    error: '',
+    isLoading: false,
+    isShowModal: false,
+    selectedIMG: '',
   };
 
-  handleDeleteUser = id => {
-    if (window.confirm('Are you sure?')) {
-      this.setState({
-        contacts: [...this.state.contacts.filter(user => user.id !== id)],
-      });
+  componentDidUpdate = (prevProps, prevState) => {
+    if (
+      prevState.searchText !== this.state.searchText ||
+      prevState.currentPage !== this.state.currentPage
+    ) {
+      this.setState({ isLoading: true });
+      fetchImage(this.state.searchText, this.state.currentPage)
+        .then(resp => {
+          if (!resp.ok) {
+            this.setState({
+              error: 'Sorry, something not good',
+            });
+            throw new Error();
+          }
+
+          return resp.json();
+        })
+        .then(data => {
+          if (data.totalHits === 0) {
+            this.setState({ error: 'Sorry, nothing' });
+            throw new Error();
+          } else {
+            this.setState(prev => ({
+              error: '',
+              items: [...prev.items, ...data.hits],
+              totalHits: data.totalHits,
+              isLoading: false,
+            }));
+          }
+        })
+        .catch(err => console.log(err))
+        .finally(() => {
+          this.setState({ isLoading: false });
+        });
     }
   };
 
-  createUser = data => {
-    this.setState({
-      contacts: [
-        ...this.state.contacts,
-        { name: data.name, id: nanoid(), number: data.number },
-      ],
-    });
+  handlerCloseModal = () => {
+    this.setState({ isShowModal: false });
   };
 
-  handlerSearch = e => {
-    this.setState({ filter: e.currentTarget.value });
+  handlerImageClick = ({
+    target: {
+      dataset: { original },
+    },
+  }) => {
+    this.setState({ isShowModal: true, selectedIMG: original });
+  };
+
+  handlerLoadMore = () => {
+    this.setState(prev => ({ currentPage: prev.currentPage + 1 }));
+  };
+
+  handlerSubmit = value => {
+    this.setState({ searchText: value, currentPage: 1, items: [], error: '' });
   };
 
   render() {
     return (
-      <section className="section">
-        <div className="container">
-          <h1 className={css.title}>Phone book</h1>
-          <ContactForm
-            createUser={this.createUser}
-            userNumber={this.state.number}
-            userName={this.state.name}
-            contacts={this.state.contacts}
+      <div className="App">
+        <SearchBar onSubmit={this.handlerSubmit} />
+        {this.state.isShowModal && (
+          <Modal
+            handlerCloseModal={this.handlerCloseModal}
+            selectedIMG={this.state.selectedIMG}
           />
-          <h2 className={css.contactsTitle}>Contacts</h2>
-          <p className={css.search}>Find contacts by name</p>
-          <Search onChange={this.handlerSearch} value={this.state.filter} />
-          <ContactList
-            handleDeleteUser={this.handleDeleteUser}
-            contacts={this.state.contacts}
-            filter={this.state.filter}
+        )}
+        {this.state.items.length > 0 && (
+          <ImageGalery
+            items={this.state.items}
+            handlerImageClick={this.handlerImageClick}
           />
-        </div>
-      </section>
+        )}
+        {this.state.isLoading && <Loader />}
+        {this.state.items.length < this.state.totalHits &&
+          !this.state.error &&
+          !this.state.isLoading && (
+            <Button handlerLoadMore={this.handlerLoadMore} />
+          )}
+        {this.state.error && <p className="error">{this.state.error}</p>}
+      </div>
     );
   }
 }
